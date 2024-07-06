@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, Any
 import os
 import time
-
+import torch.nn.functional as F
 
 class RepresentationType(Enum):
     VOXEL = auto()
@@ -26,6 +26,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
+    
 
 def compute_epe_error(pred_flow: torch.Tensor, gt_flow: torch.Tensor):
     '''
@@ -35,6 +36,13 @@ def compute_epe_error(pred_flow: torch.Tensor, gt_flow: torch.Tensor):
     '''
     epe = torch.mean(torch.mean(torch.norm(pred_flow - gt_flow, p=2, dim=1), dim=(1, 2)), dim=0)
     return epe
+
+# 損失関数の定義
+def compute_total_loss(pred_flows, gt_flow):
+    total_loss = 0.0
+    for pred_flow in pred_flows:
+        total_loss += compute_epe_error(pred_flow, gt_flow)
+    return total_loss / len(pred_flows)
 
 def save_optical_flow_to_npy(flow: torch.Tensor, file_name: str):
     '''
@@ -128,7 +136,7 @@ def main(args: DictConfig):
             event_image = batch["event_volume"].to(device) # [B, 4, 480, 640]
             ground_truth_flow = batch["flow_gt"].to(device) # [B, 2, 480, 640]
             flow = model(event_image) # [B, 2, 480, 640]
-            loss: torch.Tensor = compute_epe_error(flow, ground_truth_flow)
+            loss: torch.Tensor = compute_total_loss(flow, ground_truth_flow)
             print(f"batch {i} loss: {loss.item()}")
             optimizer.zero_grad()
             loss.backward()
